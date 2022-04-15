@@ -1,0 +1,155 @@
+---
+title: "Project"
+author: "Zhaoyu Yang"
+date: '2022-04-12'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+## An Example of Nonparametric Logistic Regression
+
+
+
+```{r}
+library(ROCR)
+library(sm)
+library(mgcv)
+library(npreg)
+set.seed(15)
+# Meaning of Parameters:
+# NPreg: Number of pregnancies
+# Glucose: Two-hour plasma glucose concentration in an oral glucose tolerance test
+# Pressure: Diastolic blood pressure (mm Hg)
+# Triceps: Triceps skin fold thickness (mm)
+# BMI: Body mass index (weight in kg/(height in m^2))
+# Pedigree: Diabetes pedigree function
+# Age: Age (years)
+# Diabetes:	0 if test negative for diabetes, 1 if test positive\
+# Test:	0 for training role, 1 for test
+
+Diabetes <- read.csv(file = '/Users/yzy/Desktop/Master/STAT6289/Project/Diabetes.csv', 
+                       header = TRUE)
+Diabetes.Training <- Diabetes[which(Diabetes$Test==0),]
+Diabetes.Testing <- Diabetes[which(Diabetes$Test==1),]
+
+# Logistic Model when considering age as the only factor
+
+Logistic <- glm(Diabetes~Age, data = Diabetes.Training, family=binomial)
+summary(Logistic)
+coef(Logistic)
+Log_probs <- predict(Logistic, newdata = Diabetes.Testing,type = "response")
+Log_pred <- ifelse(Log_probs>0.5, 1, 0)
+Logtable <- table(Log_pred, Diabetes.Testing$Diabetes)
+Logtable
+
+# The parametric logistic regression model is restricted in the sense that all variables affect the response in strictly linear fashion. If you are uncertain that a variable is an important factor and its contribution is linear in predicting the response, you might want to choose a nonparametric logistic regression model to fit the data
+
+# Nonparametric logistic regression
+
+# sm.binomial() function estimates the regression curve using the local likelihood approach for a vector of binomial observations and an associated vector of covariate values.
+
+# where h is a positive smoothing parameter
+
+x <- Diabetes.Training$Age
+y <- Diabetes.Training$Diabetes
+Nonparametric <-  sm.binomial(x, y, h = 5,xlab = "Age",ylab = "Prob of diabetes")
+Nonparametric
+
+# Let's try different smoothing parameters
+
+check_data <- data.frame(matrix(ncol = 2,nrow = length(Nonparametric$eval.points)))
+col_names <- c("Age", "Estimate")
+colnames(check_data) <- col_names
+Result_data <- data.frame(matrix(ncol = 3))
+col_names2 <- c("h-parameter","True Negative Fraction","True Positive Fraction")
+colnames(Result_data) <- col_names2
+Result_data[1,"h-parameter"] <- NA
+Result_data[1,"True Negative Fraction"] <- Logtable[1,1]/(Logtable[1,1] + Logtable[2,1])
+Result_data[1,"True Positive Fraction"] <- Logtable[2,2]/(Logtable[2,2] + Logtable[1,2])
+index<-2
+for (h in 2:20){
+  Nonparametric <-  sm.binomial(x, y, h = h,xlab = "Age",ylab = "Prob of diabetes")
+  check_data$Age <- Nonparametric$eval.points
+  check_data$Estimate <- Nonparametric$estimate
+  for (i in 1:length(Diabetes.Testing$Age)){
+    if(Diabetes.Testing[i,"Age"] < check_data[1,"Age"]){
+      Diabetes.Testing[i,"Pred_y"] <- ifelse(check_data[1,"Estimate"]>0.5,1,0)
+      }
+    else if(Diabetes.Testing[i,"Age"] >= check_data[length(check_data$Age),"Age"]){
+      Diabetes.Testing[i,"Pred_y"] <- ifelse(check_data[length(check_data$Age),"Estimate"]>0.5,1,0)
+      }
+    else{
+      for(j in 2:length(check_data$Age)){
+        if(Diabetes.Testing[i,"Age"] >= check_data[j-1,"Age"] && 
+          Diabetes.Testing[i,"Age"] < check_data[j,"Age"]){
+            Diabetes.Testing[i,"Pred_y"] <-  ifelse((check_data[j-1,"Estimate"]+check_data[j,"Estimate"])/2>0.5,1,0)
+        break
+      }
+    }
+  }
+}
+  table <- table(Diabetes.Testing$Pred_y, Diabetes.Testing$Diabetes)
+  Result_data[index,"h-parameter"] <- h
+  Result_data[index,"True Negative Fraction"] <- table[1,1]/(table[1,1] + table[2,1])
+  Result_data[index,"True Positive Fraction"] <- table[2,2]/(table[2,2] + table[1,2])
+  index <- index + 1
+}
+Result_data
+
+
+```
+
+
+
+## Logistic additive model
+
+
+
+```{r}
+# Logistic Model
+Logistic2 <- glm(Diabetes~., data = Diabetes.Training, family=binomial)
+summary(Logistic2)
+coef(Logistic2)
+Log_probs2 <- predict(Logistic2, newdata = Diabetes.Testing,type = "response")
+Log_pred2 <- ifelse(Log_probs2>0.5, 1, 0)
+Logtable2 <- table(Log_pred2, Diabetes.Testing$Diabetes)
+
+
+# Logistic additive model
+
+Log_add <- gam(Diabetes~
+                s(Glucose)+
+                s(Pedigree)+
+                s(Age),
+                data = Diabetes.Training, 
+                family = binomial)
+# We can see the degree of freedom of each factor
+
+Log_add
+
+# Let see more details
+
+summary(Log_add)
+
+plot(Log_add)
+
+Log_add_probs <- predict(Log_add, newdata = Diabetes.Testing,type="response")
+Log_add_pred <- ifelse(Log_add_probs>0.5, 1, 0)
+Log_add_table <- table(Log_add_pred, Diabetes.Testing$Diabetes)
+Comparision <- data.frame(matrix(ncol = 3))
+col_names3 <- c("Model","True Negative Fraction","True Positive Fraction")
+colnames(Comparision) <- col_names3
+Comparision[1,"Model"] <- "Logistic Model"
+Comparision[2,"Model"] <- "Logistic Additive Model"
+Comparision[1,"True Negative Fraction"] <- Logtable2[1,1]/(Logtable2[1,1] + Logtable2[2,1])
+Comparision[1,"True Positive Fraction"] <- Logtable2[2,2]/(Logtable2[2,2] + Logtable2[1,2])
+Comparision[2,"True Negative Fraction"] <- Log_add_table[1,1]/(Log_add_table[1,1] + Log_add_table[2,1])
+Comparision[2,"True Positive Fraction"] <- Log_add_table[2,2]/(Log_add_table[2,2] + Log_add_table[1,2])
+Comparision
+```
+
