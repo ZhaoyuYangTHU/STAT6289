@@ -1,2 +1,2 @@
-# STAT6289
+# Nonparametric logistic regression
 Classwork
